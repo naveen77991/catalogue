@@ -5,6 +5,15 @@ pipeline {
 
     environment {
         appVersion = ''
+        REGION = "us-east-1"
+        ACC_ID = "439481669447"
+        REPO = "catalogue"
+        IMAGE = "${ACC_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO}"
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        disableConcurrentBuilds()
     }
 
     stages {
@@ -27,19 +36,17 @@ pipeline {
         stage('Docker Build & Push to ECR') {
             steps {
                 script {
-                    def REGION = "us-east-1"
-                    def ACC_ID = "439481669447"
-                    def IMAGE = "${ACC_ID}.dkr.ecr.${REGION}.amazonaws.com/catalogue:${appVersion}"
+                    def FULL_IMAGE = "${IMAGE}:${appVersion}"
 
                     withAWS(credentials: 'aws-creds', region: REGION) {
                         sh """
                             aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${ACC_ID}.dkr.ecr.${REGION}.amazonaws.com
 
-                            docker build -t catalogue .
+                            docker build -t ${REPO} .
 
-                            docker tag catalogue:latest ${IMAGE}
+                            docker tag ${REPO}:latest ${FULL_IMAGE}
 
-                            docker push ${IMAGE}
+                            docker push ${FULL_IMAGE}
                         """
                     }
                 }
