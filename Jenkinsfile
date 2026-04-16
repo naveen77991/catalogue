@@ -4,9 +4,12 @@ pipeline {
     }
 
     stages {
-        stage('Test') {
+        stage('Read package.json') {
             steps {
-                echo "Jenkins is working"
+                script {
+                    def packageJson = readJSON file: 'package.json'
+                    echo "Version: ${packageJson.version}"
+                }
             }
         }
     }
