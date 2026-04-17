@@ -52,6 +52,24 @@ pipeline {
                 }
             }
         }
+        stage('Deploy to EKS') {
+    steps {
+        script {
+            def FULL_IMAGE = "${IMAGE}:${appVersion}"
+
+            withAWS(credentials: 'aws-creds', region: REGION) {
+                sh """
+                aws eks update-kubeconfig --region ${REGION} --name YOUR-CLUSTER-NAME
+
+                sed -i 's|IMAGE_PLACEHOLDER|${FULL_IMAGE}|g' deployment.yaml
+
+                kubectl apply -f deployment.yaml
+                kubectl apply -f service.yaml
+                """
+            }
+        }
+    }
+}
     }
 
     post {
