@@ -1,6 +1,6 @@
 pipeline {
     agent {
-        label 'bastion'
+        label 'catalogue'
     }
 
     environment {
