@@ -9,6 +9,7 @@ pipeline {
         ACC_ID = "439481669447"
         REPO = "catalogue"
         IMAGE = "${ACC_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO}"
+        KUBECONFIG = "${WORKSPACE}/kubeconfig"
     }
 
     options {
@@ -17,6 +18,7 @@ pipeline {
     }
 
     stages {
+
         stage('Read package.json') {
             steps {
                 script {
@@ -40,41 +42,49 @@ pipeline {
 
                     withAWS(credentials: 'aws-creds', region: REGION) {
                         sh """
-                            aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${ACC_ID}.dkr.ecr.${REGION}.amazonaws.com
+                        aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${ACC_ID}.dkr.ecr.${REGION}.amazonaws.com
 
-                            docker build -t ${REPO} .
+                        docker build -t ${REPO} .
 
-                            docker tag ${REPO}:latest ${FULL_IMAGE}
+                        docker tag ${REPO}:latest ${FULL_IMAGE}
 
-                            docker push ${FULL_IMAGE}
+                        docker push ${FULL_IMAGE}
                         """
                     }
                 }
             }
         }
+
         stage('Deploy to EKS') {
-    steps {
-        script {
-            def FULL_IMAGE = "${IMAGE}:${appVersion}"
+            steps {
+                script {
+                    def FULL_IMAGE = "${IMAGE}:${appVersion}"
 
-            withAWS(credentials: 'aws-creds', region: REGION) {
-                sh """
-                aws eks update-kubeconfig --region ${REGION} --name roboshop-dev
+                    withAWS(credentials: 'aws-creds', region: REGION) {
+                        sh """
+                        export KUBECONFIG=${KUBECONFIG}
 
-                sed -i 's|IMAGE_PLACEHOLDER|${FULL_IMAGE}|g' deployment.yaml
+                        aws eks update-kubeconfig \
+                          --region ${REGION} \
+                          --name roboshop-dev \
+                          --kubeconfig ${KUBECONFIG}
 
-                kubectl apply -f deployment.yaml
-                kubectl apply -f service.yaml
-                """
+                        kubectl get nodes
+
+                        sed -i 's|IMAGE_PLACEHOLDER|${FULL_IMAGE}|g' deployment.yaml
+
+                        kubectl apply -f deployment.yaml
+                        kubectl apply -f service.yaml
+                        """
+                    }
+                }
             }
         }
-    }
-}
     }
 
     post {
         success {
-            echo "✅ Build Success - Image pushed to ECR"
+            echo "✅ Build Success - Image pushed & Deployed to EKS"
         }
         failure {
             echo "❌ Build Failed - Check logs"
