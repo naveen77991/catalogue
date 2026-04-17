@@ -59,7 +59,7 @@ pipeline {
 
             withAWS(credentials: 'aws-creds', region: REGION) {
                 sh """
-                aws eks update-kubeconfig --region ${REGION} --name YOUR-CLUSTER-NAME
+                aws eks update-kubeconfig --region ${REGION} --name roboshop-dev
 
                 sed -i 's|IMAGE_PLACEHOLDER|${FULL_IMAGE}|g' deployment.yaml
 
