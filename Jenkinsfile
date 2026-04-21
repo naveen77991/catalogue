@@ -18,10 +18,23 @@ pipeline {
         choice(name: 'deploy_to', choices: ['dev', 'qa', 'prod'], description: 'Pick the Environment')
     }
     stages {
+        stage('Configure kubectl') {
+            steps {
+                script {
+                    withAWS(credentials: 'awscredentials', region: "${REGION}") {
+                        sh """
+                            aws eks update-kubeconfig \
+                                --region ${REGION} \
+                                --name ${PROJECT}-${params.deploy_to}
+                        """
+                    }
+                }
+            }
+        }
         stage('Check Status') {
             steps {
                 script {
-                    withAWS(credentials: 'awscredntials', region: "${REGION}") {
+                    withAWS(credentials: 'awscredentials', region: "${REGION}") {
                         def deploymentStatus = sh(
                             returnStdout: true,
                             script: "kubectl rollout status deployment/${COMPONENT} --timeout=30s -n ${PROJECT} || echo FAILED"
@@ -64,7 +77,7 @@ pipeline {
         stage('Docker Build & Push to ECR') {
             steps {
                 script {
-                    withAWS(credentials: 'awscredntials', region: "${REGION}") {
+                    withAWS(credentials: 'awscredentials', region: "${REGION}") {
                         sh """
                             aws ecr get-login-password --region ${REGION} | \
                             docker login --username AWS --password-stdin \
@@ -80,11 +93,8 @@ pipeline {
         stage('Deploy') {
             steps {
                 script {
-                    withAWS(credentials: 'awscredntials', region: "${REGION}") {
+                    withAWS(credentials: 'awscredentials', region: "${REGION}") {
                         sh """
-                            aws eks update-kubeconfig \
-                                --region ${REGION} \
-                                --name ${PROJECT}-${params.deploy_to}
                             kubectl get nodes
                             kubectl apply -f 01-namespace.yaml
                             sed -i 's|IMAGE_PLACEHOLDER|${IMAGE}:${env.appVersion}|g' deployment.yaml
@@ -121,7 +131,7 @@ pipeline {
             }
             steps {
                 script {
-                    withAWS(credentials: 'awscredntials', region: "${REGION}") {
+                    withAWS(credentials: 'awscredentials', region: "${REGION}") {
                         sh """
                             echo "get cr number"
                             echo "check within the deployment window"
