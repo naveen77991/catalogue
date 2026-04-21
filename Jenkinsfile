@@ -21,7 +21,7 @@ pipeline {
         stage('Configure kubectl') {
             steps {
                 script {
-                    withAWS(credentials: 'awscredentials', region: "${REGION}") {
+                    withAWS(credentials: 'awscredntials', region: "${REGION}") {
                         sh """
                             aws eks update-kubeconfig \
                                 --region ${REGION} \
@@ -34,7 +34,7 @@ pipeline {
         stage('Check Status') {
             steps {
                 script {
-                    withAWS(credentials: 'awscredentials', region: "${REGION}") {
+                    withAWS(credentials: 'awscredntials', region: "${REGION}") {
                         def deploymentStatus = sh(
                             returnStdout: true,
                             script: "kubectl rollout status deployment/${COMPONENT} --timeout=30s -n ${PROJECT} || echo FAILED"
@@ -77,83 +77,7 @@ pipeline {
         stage('Docker Build & Push to ECR') {
             steps {
                 script {
-                    withAWS(credentials: 'awscredentials', region: "${REGION}") {
+                    withAWS(credentials: 'awscredntials', region: "${REGION}") {
                         sh """
                             aws ecr get-login-password --region ${REGION} | \
                             docker login --username AWS --password-stdin \
-                            ${ACC_ID}.dkr.ecr.${REGION}.amazonaws.com
-                            docker build -t ${COMPONENT} .
-                            docker tag ${COMPONENT}:latest ${IMAGE}:${env.appVersion}
-                            docker push ${IMAGE}:${env.appVersion}
-                        """
-                    }
-                }
-            }
-        }
-        stage('Deploy') {
-            steps {
-                script {
-                    withAWS(credentials: 'awscredentials', region: "${REGION}") {
-                        sh """
-                            kubectl get nodes
-                            kubectl apply -f 01-namespace.yaml
-                            sed -i 's|IMAGE_PLACEHOLDER|${IMAGE}:${env.appVersion}|g' deployment.yaml
-                            kubectl apply -f deployment.yaml -n ${PROJECT}
-                            kubectl apply -f service.yaml -n ${PROJECT}
-                        """
-                    }
-                }
-            }
-        }
-        stage('Functional Testing') {
-            when {
-                expression { params.deploy_to == "dev" }
-            }
-            steps {
-                script {
-                    echo "Run functional test cases"
-                }
-            }
-        }
-        stage('Integration Testing') {
-            when {
-                expression { params.deploy_to == "qa" }
-            }
-            steps {
-                script {
-                    echo "Run Integration test cases"
-                }
-            }
-        }
-        stage('PROD Deploy') {
-            when {
-                expression { params.deploy_to == "prod" }
-            }
-            steps {
-                script {
-                    withAWS(credentials: 'awscredentials', region: "${REGION}") {
-                        sh """
-                            echo "get cr number"
-                            echo "check within the deployment window"
-                            echo "is CR approved"
-                            echo "trigger PROD deploy"
-                        """
-                    }
-                }
-            }
-        }
-    }
-    post {
-        always {
-            echo "🔁 Pipeline completed"
-            sh 'docker system prune -f || true'
-            deleteDir()
-        }
-        success {
-            echo "✅ Success - ${COMPONENT}:${env.appVersion} deployed to ${params.deploy_to}"
-        }
-        failure {
-            echo "❌ Failed - Check logs above for details"
-        }
-    }
-}
