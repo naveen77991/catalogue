@@ -1,0 +1,50 @@
+name: Deploy to ECS Fargate
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout code
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Step 2: Configure AWS credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Step 3: Download existing task definition from ECS
+      - name: Download Task Definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition task-def-1 \
+            --query taskDefinition \
+            > task-definition.json
+
+      # Step 4: Update the container image in the task definition
+      - name: Update ECS Task Definition with new image
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: naveen
+          image: 439481669447.dkr.ecr.us-east-1.amazonaws.com/naveen:latest
+
+      # Step 5: Deploy updated task definition to ECS Service
+      - name: Deploy to ECS Service
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: task-def-1-service-5pv5guf8
+          cluster: ecs
+          wait-for-service-stability: true
