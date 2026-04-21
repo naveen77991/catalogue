@@ -16,6 +16,6 @@ spec:
     spec:
       containers:
       - name: catalogue
-        image: 439481669447.dkr.ecr.us-east-1.amazonaws.com/catalogue:1.0.0
+        image: IMAGE_PLACEHOLDER
         ports:
         - containerPort: 8080
