@@ -1,0 +1,76 @@
+name: Build Push Deploy (ECS Fargate)
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ACCOUNT_ID: 439481669447
+  ECR_REPOSITORY: catalogue
+  ECS_CLUSTER: ecs
+  ECS_SERVICE: task-def-1-service-5pv5guf8
+  TASK_DEFINITION: task-def-1
+  CONTAINER_NAME: catalogue
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.IAM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Image
+        run: docker build -t catalogue .
+
+      - name: Tag Image
+        run: |
+          IMAGE_URI=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:${{ github.sha }}
+          docker tag catalogue:latest $IMAGE_URI
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+      - name: Push Image
+        run: |
+          docker push $IMAGE_URI
+
+      # 🔥 IMPORTANT: Download current task definition
+      - name: Download task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition $TASK_DEFINITION \
+            --query taskDefinition > task-def.json
+
+      # 🔥 Replace image in task definition
+      - name: Update task definition with new image
+        run: |
+          jq --arg IMAGE "$IMAGE_URI" \
+          '.containerDefinitions[0].image=$IMAGE' \
+          task-def.json > new-task-def.json
+
+      # 🔥 Register new revision
+      - name: Register new task definition
+        run: |
+          aws ecs register-task-definition \
+            --cli-input-json file://new-task-def.json
+
+      # 🔥 Deploy new revision
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --force-new-deployment
