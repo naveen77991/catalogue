@@ -1,0 +1,39 @@
+name: Deploy to ECS
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
+          aws-region: us-east-1
+
+      - name: Get task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition task-def-1 \
+            --query taskDefinition > task.json
+
+      - name: Fix + update image
+        run: |
+          jq 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)' task.json > new.json
+          sed -i 's|image":.*|image": "439481669447.dkr.ecr.us-east-1.amazonaws.com/naveen:latest",|' new.json
+
+      - name: Register
+        run: |
+          aws ecs register-task-definition --cli-input-json file://new.json
+
+      - name: Deploy
+        run: |
+          aws ecs update-service \
+            --cluster ecs \
+            --service task-def-1-service-5pv5guf8 \
+            --force-new-deployment
