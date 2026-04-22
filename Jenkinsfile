@@ -6,7 +6,6 @@ pipeline {
         appVersion = ''
         REGION = "us-west-1"
         ACC_ID = "439481669447"
-        PROJECT = "roboshop"
         COMPONENT = "catalogue"
     }
     options {
@@ -14,96 +13,62 @@ pipeline {
         disableConcurrentBuilds()
     }
     parameters {
-        string(name: 'appVersion', description: 'Image version of the application')
-        choice(name: 'deploy_to', choices: ['dev', 'qa', 'prod'], description: 'Pick the Environment')
+        booleanParam(name: 'deploy', defaultValue: false, description: 'Toggle to trigger deploy')
     }
     stages {
-        stage('Check Status') {
+        stage('Read package.json') {
             steps {
                 script {
-                    withAWS(credentials: 'aws-creds', region: 'us-west-1') {
-                        def deploymentStatus = sh(returnStdout: true, script: "kubectl rollout status deployment/catalogue --timeout=30s -n $PROJECT || echo FAILED").trim()
-                        if (deploymentStatus.contains("successfully rolled out")) {
-                            echo "Deployment is success"
-                        } else {
-                            sh """
-                                helm rollback $COMPONENT -n $PROJECT
-                                sleep 20
-                            """
-                            def rollbackStatus = sh(returnStdout: true, script: "kubectl rollout status deployment/catalogue --timeout=30s -n $PROJECT || echo FAILED").trim()
-                            if (rollbackStatus.contains("successfully rolled out")) {
-                                error "Deployment is Failure, Rollback Success"
-                            } else {
-                                error "Deployment is Failure, Rollback Failure. Application is not running"
-                            }
-                        }
-                    }
+                    def packageJson = readJSON file: 'package.json'
+                    appVersion = packageJson.version
+                    echo "Package version: ${appVersion}"
                 }
             }
         }
-        stage('Deploy') {
+        stage('Install Dependencies') {
+            steps {
+                sh "npm install"
+            }
+        }
+        stage('Docker Build & Push to ECR') {
             steps {
                 script {
                     withAWS(credentials: 'aws-creds', region: 'us-west-1') {
                         sh """
-                            aws eks update-kubeconfig --region $REGION --name "$PROJECT-${params.deploy_to}"
-                            kubectl get nodes
-                            kubectl apply -f 01-namespace.yaml
-                            sed -i "s/IMAGE_VERSION/${params.appVersion}/g" values-${params.deploy_to}.yaml
-                            kubectl apply -f application.yaml
+                            aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${ACC_ID}.dkr.ecr.${REGION}.amazonaws.com
+                            docker build -t ${ACC_ID}.dkr.ecr.${REGION}.amazonaws.com/${COMPONENT}:${appVersion} .
+                            docker push ${ACC_ID}.dkr.ecr.${REGION}.amazonaws.com/${COMPONENT}:${appVersion}
                         """
                     }
                 }
             }
         }
-        stage('Functional Testing') {
+        stage('Trigger Deploy') {
             when {
-                expression { params.deploy_to == "dev" }
+                expression { params.deploy }
             }
             steps {
                 script {
-                    echo "Run functional test cases"
-                }
-            }
-        }
-        stage('Integration Testing') {
-            when {
-                expression { params.deploy_to == "qa" }
-            }
-            steps {
-                script {
-                    echo "Run Integration test cases"
-                }
-            }
-        }
-        stage('PROD Deploy') {
-            when {
-                expression { params.deploy_to == "prod" }
-            }
-            steps {
-                script {
-                    withAWS(credentials: 'aws-creds', region: 'us-west-1') {
-                        sh """
-                            echo "get cr number"
-                            echo "check with in the deployment window"
-                            echo "is CR approved"
-                            echo "trigger PROD deploy"
-                        """
-                    }
+                    build job: 'catalogue-cd',
+                    parameters: [
+                        string(name: 'appVersion', value: "${appVersion}")
+                    ],
+                    propagate: false,
+                    wait: false
                 }
             }
         }
     }
     post {
         always {
-            echo 'I will always say Hello again!'
+            echo 'Pipeline finished!'
             deleteDir()
         }
         success {
-            echo 'Hello Success'
+            echo 'Build Success!'
         }
         failure {
-            echo 'Hello Failure'
+            echo 'Build Failed!'
         }
     }
 }
