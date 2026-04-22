@@ -50,15 +50,13 @@ pipeline {
             }
             steps {
                 script {
-                    withAWS(credentials: 'aws-creds', region: 'us-west-1') {
-                        sh """
-                            aws eks update-kubeconfig --region ${REGION} --name ${CLUSTER}
-                            kubectl get nodes
-                            sed -i "s|IMAGE_VERSION|${appVersion}|g" deployment.yaml
-                            kubectl apply -f deployment.yaml
-                            kubectl rollout status deployment/${COMPONENT} --timeout=120s
-                        """
-                    }
+                    sh """
+                        aws eks update-kubeconfig --region ${REGION} --name ${CLUSTER}
+                        kubectl get nodes
+                        sed -i "s|IMAGE_VERSION|${appVersion}|g" deployment.yaml
+                        kubectl apply -f deployment.yaml
+                        kubectl rollout status deployment/${COMPONENT} --timeout=120s
+                    """
                 }
             }
         }
