@@ -7,6 +7,7 @@ pipeline {
         REGION = "us-west-1"
         ACC_ID = "439481669447"
         COMPONENT = "catalogue"
+        CLUSTER = "catalogue-cluster1"
     }
     options {
         timeout(time: 30, unit: 'MINUTES')
@@ -43,18 +44,21 @@ pipeline {
                 }
             }
         }
-        stage('Trigger Deploy') {
+        stage('Deploy to EKS') {
             when {
                 expression { params.deploy }
             }
             steps {
                 script {
-                    build job: 'catalogue-cd',
-                    parameters: [
-                        string(name: 'appVersion', value: "${appVersion}")
-                    ],
-                    propagate: false,
-                    wait: false
+                    withAWS(credentials: 'aws-creds', region: 'us-west-1') {
+                        sh """
+                            aws eks update-kubeconfig --region ${REGION} --name ${CLUSTER}
+                            kubectl get nodes
+                            sed -i "s|IMAGE_VERSION|${appVersion}|g" deployment.yaml
+                            kubectl apply -f deployment.yaml
+                            kubectl rollout status deployment/${COMPONENT} --timeout=120s
+                        """
+                    }
                 }
             }
         }
@@ -65,10 +69,10 @@ pipeline {
             deleteDir()
         }
         success {
-            echo 'Build Success!'
+            echo 'Success!'
         }
         failure {
-            echo 'Build Failed!'
+            echo 'Failed!'
         }
     }
 }
