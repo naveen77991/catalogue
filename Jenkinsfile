@@ -3,11 +3,11 @@ pipeline {
         label 'catalogue'
     }
     environment {
-        REGION    = "us-west-1"
-        ACC_ID    = "439481669447"
-        PROJECT   = "roboshop"
+        appVersion = ''
+        REGION = "us-west-1"
+        ACC_ID = "439481669447"
+        PROJECT = "roboshop"
         COMPONENT = "catalogue"
-        IMAGE     = "${ACC_ID}.dkr.ecr.${REGION}.amazonaws.com/${COMPONENT}"
     }
     options {
         timeout(time: 30, unit: 'MINUTES')
@@ -18,38 +18,19 @@ pipeline {
         choice(name: 'deploy_to', choices: ['dev', 'qa', 'prod'], description: 'Pick the Environment')
     }
     stages {
-        stage('Configure kubectl') {
-            steps {
-                script {
-                    withAWS(credentials: 'awscredntials', region: "${REGION}") {
-                        sh """
-                            aws eks update-kubeconfig \
-                                --region ${REGION} \
-                                --name ${PROJECT}-${params.deploy_to}
-                        """
-                    }
-                }
-            }
-        }
         stage('Check Status') {
             steps {
                 script {
-                    withAWS(credentials: 'awscredntials', region: "${REGION}") {
-                        def deploymentStatus = sh(
-                            returnStdout: true,
-                            script: "kubectl rollout status deployment/${COMPONENT} --timeout=30s -n ${PROJECT} || echo FAILED"
-                        ).trim()
+                    withAWS(credentials: 'aws-creds', region: 'us-west-1') {
+                        def deploymentStatus = sh(returnStdout: true, script: "kubectl rollout status deployment/catalogue --timeout=30s -n $PROJECT || echo FAILED").trim()
                         if (deploymentStatus.contains("successfully rolled out")) {
                             echo "Deployment is success"
                         } else {
                             sh """
-                                kubectl rollout undo deployment/${COMPONENT} -n ${PROJECT}
+                                helm rollback $COMPONENT -n $PROJECT
                                 sleep 20
                             """
-                            def rollbackStatus = sh(
-                                returnStdout: true,
-                                script: "kubectl rollout status deployment/${COMPONENT} --timeout=30s -n ${PROJECT} || echo FAILED"
-                            ).trim()
+                            def rollbackStatus = sh(returnStdout: true, script: "kubectl rollout status deployment/catalogue --timeout=30s -n $PROJECT || echo FAILED").trim()
                             if (rollbackStatus.contains("successfully rolled out")) {
                                 error "Deployment is Failure, Rollback Success"
                             } else {
@@ -60,24 +41,69 @@ pipeline {
                 }
             }
         }
-        stage('Read package.json') {
+        stage('Deploy') {
             steps {
                 script {
-                    def packageJson = readJSON file: 'package.json'
-                    env.appVersion = packageJson.version
-                    echo "Package version: ${env.appVersion}"
+                    withAWS(credentials: 'aws-creds', region: 'us-west-1') {
+                        sh """
+                            aws eks update-kubeconfig --region $REGION --name "$PROJECT-${params.deploy_to}"
+                            kubectl get nodes
+                            kubectl apply -f 01-namespace.yaml
+                            sed -i "s/IMAGE_VERSION/${params.appVersion}/g" values-${params.deploy_to}.yaml
+                            kubectl apply -f application.yaml
+                        """
+                    }
                 }
             }
         }
-        stage('Install Dependencies') {
-            steps {
-                sh 'npm install'
+        stage('Functional Testing') {
+            when {
+                expression { params.deploy_to == "dev" }
             }
-        }
-        stage('Docker Build & Push to ECR') {
             steps {
                 script {
-                    withAWS(credentials: 'awscredntials', region: "${REGION}") {
+                    echo "Run functional test cases"
+                }
+            }
+        }
+        stage('Integration Testing') {
+            when {
+                expression { params.deploy_to == "qa" }
+            }
+            steps {
+                script {
+                    echo "Run Integration test cases"
+                }
+            }
+        }
+        stage('PROD Deploy') {
+            when {
+                expression { params.deploy_to == "prod" }
+            }
+            steps {
+                script {
+                    withAWS(credentials: 'aws-creds', region: 'us-west-1') {
                         sh """
-                            aws ecr get-login-password --region ${REGION} | \
-                            docker login --username AWS --password-stdin \
+                            echo "get cr number"
+                            echo "check with in the deployment window"
+                            echo "is CR approved"
+                            echo "trigger PROD deploy"
+                        """
+                    }
+                }
+            }
+        }
+    }
+    post {
+        always {
+            echo 'I will always say Hello again!'
+            deleteDir()
+        }
+        success {
+            echo 'Hello Success'
+        }
+        failure {
+            echo 'Hello Failure'
+        }
+    }
+}
