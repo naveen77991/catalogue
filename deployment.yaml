@@ -16,6 +16,6 @@ spec:
     spec:
       containers:
       - name: catalogue
-        image: IMAGE_PLACEHOLDER
+        image: IMAGE_VERSION
         ports:
         - containerPort: 8080
